@@ -102,6 +102,7 @@ int32_t WM8904_Init(WM8904_Object_t *pObj, WM8904_Init_t *pInit)
 {
   int32_t ret = WM8904_OK;
   uint16_t tmp;
+  uint8_t  iter_count;
 
   if (pObj->IsInitialized == 1U)
   {
@@ -260,7 +261,7 @@ int32_t WM8904_Init(WM8904_Object_t *pObj, WM8904_Init_t *pInit)
 
   ret += WM8904_SetFrequency(pObj, pInit->Frequency);
 
-  if ((WM8904_CurrentDevices & WM8904_OUT_HEADPHONE) == WM8904_OUT_HEADPHONE)
+  if (pInit->OutputDevice == WM8904_OUT_HEADPHONE)
   {
     ret += WM8904_SetVolume(pObj, VOLUME_OUTPUT, (uint8_t)pInit->Volume);
   }
@@ -328,7 +329,15 @@ int32_t WM8904_Init(WM8904_Object_t *pObj, WM8904_Init_t *pInit)
 
   tmp = 0x0030U; /* Startup 0 and 1 */
   ret += wm8904_write_reg(&pObj->Ctx, WM8904_DC_SERVO1, &tmp, 2U);
-  WM8904_Delay(pObj, 300U);
+
+  iter_count = 0;
+  tmp = 0x0000U;
+  while(((tmp & 0x0003U) != 0x0003U) && (iter_count < 30U)) /* Wait DC Servo start-up completion */
+  {
+    iter_count ++;
+    WM8904_Delay(pObj, 10U);
+    ret += wm8904_read_reg(&pObj->Ctx, WM8904_DC_SERVO_READBACK0, &tmp, 2U);
+  }
 
   /**********************/
   /* Output signal path */

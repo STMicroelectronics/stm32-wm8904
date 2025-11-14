@@ -5,61 +5,94 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>Release Notes for WM8904 Audio Codec Component Driver</title>
-  <style type="text/css">
-      code{white-space: pre-wrap;}
-      span.smallcaps{font-variant: small-caps;}
-      span.underline{text-decoration: underline;}
-      div.column{display: inline-block; vertical-align: top; width: 50%;}
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
   <link rel="stylesheet" href="_htmresc/mini-st_2020.css" />
-  <!--[if lt IE 9]>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
-  <![endif]-->
   <link rel="icon" type="image/x-icon" href="_htmresc/favicon.png" />
 </head>
 <body>
 <div class="row">
 <div class="col-sm-12 col-lg-4">
 <center>
-<h1 id="release-notes-for-wm8904-component-driver">Release Notes for <mark>WM8904</mark> Component Driver</h1>
+<h1 id="release-notes-for-wm8904-component-driver">Release Notes for
+<mark>WM8904</mark> Component Driver</h1>
 <p>Copyright © 2024 STMicroelectronics<br />
 </p>
-<a href="https://www.st.com" class="logo"><img src="_htmresc/st_logo_2020.png" alt="ST logo" /></a>
+<a href="https://www.st.com" class="logo"><img
+src="_htmresc/st_logo_2020.png" alt="ST logo" /></a>
 </center>
 <h1 id="purpose">Purpose</h1>
-<p>This driver provides a set of audio functions offered by WM8904 Codec component</p>
+<p>This driver provides a set of audio functions offered by WM8904 Codec
+component</p>
 </div>
-<div class="col-sm-12 col-lg-8">
-<h1 id="update-history">Update History</h1>
+<section id="update-history" class="col-sm-12 col-lg-8">
+<h1>Update History</h1>
 <div class="collapse">
-<input type="checkbox" id="collapse-section2" checked aria-hidden="true"> <label for="collapse-section2" aria-hidden="true"><strong>V1.1.0 / 20-September-2024</strong></label>
-<div>
+<input type="checkbox" id="collapse-section3" checked aria-hidden="true">
+<label for="collapse-section3" aria-hidden="true"><strong>V1.1.1 /
+15-September-2025</strong></label>
 <h2 id="main-changes">Main Changes</h2>
 <ul>
-<li>First maintenance release of <strong>WM8904</strong> Audio Codec driver</li>
+<li>Maintenance release of <strong>WM8904</strong> Audio Codec
+driver</li>
+<li>Changes compared with V1.1.0 release
+<ul>
+<li>Reduce excessive initialization delay by checking stabilization
+ready flag instead of waiting a fixed time</li>
+<li>Update initialization to use output device passed as parameter
+instead of current device which is not yet initialized</li>
+</ul></li>
+</ul>
+</div>
+<div class="collapse">
+<input type="checkbox" id="collapse-section2" aria-hidden="true">
+<label for="collapse-section2" aria-hidden="true"><strong>V1.1.0 /
+20-September-2024</strong></label>
+<h2 id="main-changes-1">Main Changes</h2>
+<ul>
+<li>First maintenance release of <strong>WM8904</strong> Audio Codec
+driver</li>
 <li>Changes compared with V1.0.0 release
 <ul>
 <li>Update input devices to be defined as bitfields</li>
 <li>Implement LINE_IN2 and digital microphone path</li>
 <li>Add 24KHz audio frequency support</li>
-<li>Update IsInitialized variable at the end of init function WM8904_Init()</li>
+<li>Update IsInitialized variable at the end of init function
+WM8904_Init()</li>
 </ul></li>
 </ul>
 </div>
-</div>
 <div class="collapse">
-<input type="checkbox" id="collapse-section1"  aria-hidden="true"> <label for="collapse-section1" aria-hidden="true"><strong>V1.0.0 / 28-February-2024</strong></label>
-<div>
-<h2 id="main-changes-1">Main Changes</h2>
+<input type="checkbox" id="collapse-section1"  aria-hidden="true">
+<label for="collapse-section1" aria-hidden="true"><strong>V1.0.0 /
+28-February-2024</strong></label>
+<h2 id="main-changes-2">Main Changes</h2>
 <ul>
-<li>First official release of <strong>WM8904</strong> Audio Codec driver</li>
+<li>First official release of <strong>WM8904</strong> Audio Codec
+driver</li>
 </ul>
 </div>
-</div>
-</div>
+</section>
 </div>
 <footer class="sticky">
-For complete documentation on <mark>STM32 Microcontrollers</mark> , visit: <span style="font-color: blue;"><a href="http://www.st.com/STM32">www.st.com</a></span>
+For complete documentation on <mark>STM32 Microcontrollers</mark> ,
+visit: <span style="font-color: blue;"><a
+href="http://www.st.com/STM32">www.st.com</a></span>
 </footer>
 </body>
 </html>
