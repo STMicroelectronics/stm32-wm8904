@@ -6,7 +6,7 @@
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2023 STMicroelectronics.
+  * Copyright (c) 2026 STMicroelectronics.
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
@@ -27,17 +27,46 @@
   * @{
   */
 
-/** @defgroup WM8904 WM8904
+/** @defgroup WM8904
   * @brief     This file provides a set of functions needed to drive the
   *            WM8904 audio codec.
   * @{
   */
 
-/** @defgroup WM8904_Exported_Variables Exported Variables
+/** @defgroup WM8994_Private_Types
   * @{
   */
+
+/**
+  * @}
+  */ 
+  
+/** @defgroup WM8994_Private_Defines
+  * @{
+  */
+/* Uncomment this line to enable verifying data sent to codec after each write 
+   operation (for debug purpose) */
+#if !defined (VERIFY_WRITTENDATA)  
+  //#define VERIFY_WRITTENDATA
+#endif /* VERIFY_WRITTENDATA */
+/**
+  * @}
+  */ 
+
+/** @defgroup WM8904_Private_Macros
+  * @{
+  */
+
+/**
+  * @}
+  */ 
+  
+/** @defgroup WM8904_Private_Variables
+  * @{
+  */
+
 /* Audio codec driver structure initialization */
-WM8904_Drv_t WM8904_Driver =
+AUDIO_DrvTypeDef wm8904_drv =
 {
   WM8904_Init,
   WM8904_DeInit,
@@ -47,15 +76,9 @@ WM8904_Drv_t WM8904_Driver =
   WM8904_Resume,
   WM8904_Stop,
   WM8904_SetFrequency,
-  WM8904_GetFrequency,
   WM8904_SetVolume,
-  WM8904_GetVolume,
   WM8904_SetMute,
   WM8904_SetOutputMode,
-  WM8904_SetResolution,
-  WM8904_GetResolution,
-  WM8904_SetProtocol,
-  WM8904_GetProtocol,
   WM8904_Reset
 };
 /**
@@ -74,480 +97,322 @@ WM8904_Drv_t WM8904_Driver =
 /** @defgroup WM8904_Private_Variables Private Variables
   * @{
   */
-static uint32_t WM8904_CurrentDevices = WM8904_OUT_NONE;
 /**
   * @}
   */
 
-/** @defgroup WM8904_Private_Functions Private Functions
+/** @defgroup WM8904_Function_Prototypes
   * @{
   */
-static int32_t WM8904_ReadRegWrap(void *handle, uint16_t Reg, uint8_t* Data, uint16_t Length);
-static int32_t WM8904_WriteRegWrap(void *handle, uint16_t Reg, uint8_t* Data, uint16_t Length);
-static void    WM8904_Delay(const WM8904_Object_t *pObj, uint32_t Delay);
+static uint8_t CODEC_IO_Write(uint8_t Addr, uint16_t Reg, uint16_t Value);
 /**
   * @}
-  */
+  */ 
 
 /** @defgroup WM8904_Exported_Functions Exported Functions
   * @{
   */
+  
 /**
   * @brief Initializes the audio codec and the control interface.
-  * @param pObj pointer to component object
-  * @param pInit pointer de component init structure
+  * @param DeviceAddr: Device address on communication Bus.   
+  * @param OutputInputDevice: can  WM8904_OUT_HEADPHONE,
+  *  WM8904_OUT_BOTH, WM8904_OUT_LINE, WM8904_IN_MIC1,
+  *  WM8904_IN_MIC2, WM8904_IN_MIC1_MIC2, WM8904_IN_LINE1 
+  *  WM8904_IN_LINE2 , WM8904_IN_DIGITAL_MIC1 or WM8904_IN_DIGITAL_MIC2
+  * @param Volume: Initial volume level (from 0 (Mute) to 100 (Max))
+  * @param AudioFreq: Audio Frequency 
   * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_Init(WM8904_Object_t *pObj, WM8904_Init_t *pInit)
+uint32_t WM8904_Init(uint16_t DeviceAddr, uint16_t OutputInputDevice, uint8_t Volume, uint32_t AudioFreq)
 {
-  int32_t ret = WM8904_OK;
+  uint32_t counter = 0;
+  uint16_t output_device = OutputInputDevice & 0xFF;
+  uint16_t input_device = OutputInputDevice & 0xFF00;
   uint16_t tmp;
-  uint8_t  iter_count;
-
-  if (pObj->IsInitialized == 1U)
-  {
-    ret += WM8904_DeInit(pObj);
-  }
-
-  /*********/
-  /* Reset */
-  /*********/
-
+  
+  /* Initialize the Control interface of the Audio Codec */
+  AUDIO_IO_Init();
+  
   tmp = 0x0U; /* Reset registers */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_SW_RESET, &tmp, 2U);
-
-  /**************/
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_SW_RESET, tmp);
+  
   /* Clock rate */
-  /**************/
-
   tmp = 0x0004U; /* CLK_SYS_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES2, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES2, tmp);
 
-  /**************************************/
   /* Reference voltages and master bias */
-  /**************************************/
-
   tmp = 0x0018U; /* ISEL[1:0] = 10b, BIAS_EN = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_BIAS_CONTROL0, &tmp, 2U);
-
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_BIAS_CONTROL0, tmp);
+    
   tmp = 0x0047U; /* VMID_BUF_ENA = 1, VMID_RES[1:0] = 11b, VMID_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_VMID_CONTROL0, &tmp, 2U);
-  WM8904_Delay(pObj, 100U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_VMID_CONTROL0, tmp);
+  AUDIO_IO_Delay(100); /* Give VMID time to charge on cold start */
 
   tmp = 0x0043U; /* VMID_BUF_ENA = 1, VMID_RES[1:0] = 01b, VMID_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_VMID_CONTROL0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_VMID_CONTROL0, tmp);
 
   tmp = 0x0019U; /* ISEL[1:0] = 10b, BIAS_EN = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_BIAS_CONTROL0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_BIAS_CONTROL0, tmp);
 
-  /********************/
   /* Mic BIAS control */
-  /********************/
-
   tmp = 0x0001U; /* MICBIAS_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_MIC_BIAS_CONTROL0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_MIC_BIAS_CONTROL0, tmp);
 
-  /**********************/
-  /* Power management   */
-  /**********************/
-
-  if (pInit->InputDevice == WM8904_IN_LINE2)
+  /* Power management */
+  if (input_device == WM8904_IN_LINE2)
   {
-    tmp = 0x0003U; /* INL_ENA = INR_ENA = 1 */
+  tmp = 0x0003U; /* INL_ENA = INR_ENA = 1 */
   }
-  else if (pInit->InputDevice == WM8904_IN_MIC1)
+  else if (input_device == WM8904_IN_MIC1)
   {
-    tmp = 0x0002U; /* INL_ENA = 1 */
+  tmp = 0x0002U; /* INL_ENA = 1 */
   }
   else /* WM8904_IN_DIGITAL_MIC2 */
   {
-    tmp = 0x0000U; /* INx_ENA = 0 */
+  tmp = 0x0000U; /* INx_ENA = 0 */
   }
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_PWR_MANAGEMENT0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_PWR_MANAGEMENT0, tmp);
 
   tmp = 0x0003U; /* HPL_PGA_ENA = HPR_PGA_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_PWR_MANAGEMENT2, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_PWR_MANAGEMENT2, tmp);
 
-  /**************/
   /* Clock rate */
-  /**************/
-
   tmp = 0x0006U; /* CLK_DSP_ENA = CLK_SYS_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES2, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES2, tmp);
 
-  /**************/
   /* DAC and ADC*/
-  /**************/
-
-  if (pInit->InputDevice == WM8904_IN_LINE2)
+  if (input_device == WM8904_IN_LINE2)
   {
-    tmp = 0x000FU; /* ADCR_ENA = ADCL_ENA = DACL_ENA = DACR_ENA = 1 */
+  tmp = 0x000FU; /* ADCR_ENA = ADCL_ENA = DACL_ENA = DACR_ENA = 1 */
   }
-  else if (pInit->InputDevice == WM8904_IN_MIC1)
+  else if (input_device == WM8904_IN_MIC1)
   {
-    tmp = 0x000EU; /* ADCL_ENA = DACL_ENA = DACR_ENA = 1, ADCR_ENA = 0 */
+  tmp = 0x000EU; /* ADCL_ENA = DACL_ENA = DACR_ENA = 1, ADCR_ENA = 0 */
+  }
+  else if (input_device == WM8904_IN_DIGITAL_MIC2)
+  {
+  tmp = 0x000EU; /* ADCL_ENA = DACL_ENA = DACR_ENA = 1, ADCR_ENA = 0 */
   }
   else /* WM8904_IN_DIGITAL_MIC2 */
   {
-    tmp = 0x000EU; /* ADCL_ENA = DACL_ENA = DACR_ENA = 1, ADCR_ENA = 0 */
+  tmp = 0x000EU; /* DACL_ENA = DACR_ENA = 1, ADCx_ENA = 0 */
   }
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_PWR_MANAGEMENT6, &tmp, 2U);
-
-  if (pInit->InputDevice == WM8904_IN_DIGITAL_MIC2)
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_PWR_MANAGEMENT6, tmp);
+  
+  if (input_device == WM8904_IN_DIGITAL_MIC2)
   {
-    tmp = 0x1800U; /* DMIC_ENA = 1, DMIC_SRC = IN1R/DMICDAT2 */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_DIGITAL_MICROPHONE0, &tmp, 2U);
+  tmp = 0x1800U; /* DMIC_ENA = 1, DMIC_SRC = IN1R/DMICDAT2 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DIGITAL_MICROPHONE0, tmp);
 
-    tmp = 0x0008U; /* GPIO1_PU = GPIO1_PD = 0, GPIO1_SEL = 8 (DMIC clock out) */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_GPIO_CONTROL1, &tmp, 2U);
+  tmp = 0x0008U; /* GPIO1_PU = GPIO1_PD = 0, GPIO1_SEL = 8 (DMIC clock out) */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_GPIO_CONTROL1, tmp);
 
-    tmp = 0x81AFU; /* DRC_ENA = 1, DRC_DAC_PATH = ADC */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_DRC0, &tmp, 2U);
+  tmp = 0x81AFU; /* DRC_ENA = 1, DRC_DAC_PATH = ADC */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DRC0, tmp);
 
-    tmp = 0x32C1U; /* DRC_MINGAIN = 0dB, DRC_MAXGAIN = 18dB */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_DRC1, &tmp, 2U);
+  tmp = 0x32C1U; /* DRC_MINGAIN = 0dB, DRC_MAXGAIN = 18dB */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DRC1, tmp);
 
-    tmp = 0x002CU; /* DRC_HIGH_COMP = DRC_LO_COMP = 0 */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_DRC2, &tmp, 2U);
+  tmp = 0x002CU; /* DRC_HIGH_COMP = DRC_LO_COMP = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DRC2, tmp);
 
-    if (pInit->Frequency >= WM8904_FREQUENCY_32K)
-    {
-      tmp = 0x0000U; /* ADC_OSR128 = 0 (64xfs) */
-    }
-    else
-    {
-      tmp = 0x0001U; /* ADC_OSR128 = 1 (128xfs) */
-    }
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_ADC0, &tmp, 2U);
+  if (AudioFreq >= WM8904_FREQUENCY_32K)
+  {
+  tmp = 0x0000U; /* ADC_OSR128 = 0 (64xfs) */
   }
   else
   {
-    tmp = 0x0000U; /* DMIC_ENA = 0 */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_DIGITAL_MICROPHONE0, &tmp, 2U);
-
-    tmp = 0x0014U; /* GPIO1_PU = GPIO1_PD = 1, GPIO1_SEL = 4 (IRQ, default value) */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_GPIO_CONTROL1, &tmp, 2U);
-
-    tmp = 0x01AFU; /* DRC_ENA = 0, DRC_DAC_PATH = ADC */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_DRC0, &tmp, 2U);
-
-    tmp = 0x0001U; /* ADC_OSR128 = 1 (128xfs) */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_ADC0, &tmp, 2U);
+  tmp = 0x0001U; /* ADC_OSR128 = 1 (128xfs) */
   }
-
-  tmp = 0x0648U; /* DAC_MUTERATE = DAC_UNMUTE_RAMP = DAC_OSR128 = DAC_MUTE = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_DAC_DIGITAL1, &tmp, 2U);
-
-  if (pInit->InputDevice == WM8904_IN_LINE2)
-  {
-    tmp = 0x0050U; /* AIFADCL_SRC = 0 (Left), AIFADCR_SRC = 1 (Right) */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_ADC0, tmp);
+  
   }
-  else if (pInit->InputDevice == WM8904_IN_MIC1)
+  else
   {
-    tmp = 0x0010U; /* AIFADCL_SRC = 0 (Left), AIFADCR_SRC = 0 (left) */
+  tmp = 0x0000U; /* DMIC_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DIGITAL_MICROPHONE0, tmp);
+
+  tmp = 0x0014U; /* GPIO1_PU = 0, GPIO1_PD = 1, GPIO1_SEL = 4 (IRQ, default value) */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_GPIO_CONTROL1, tmp);
+
+  tmp = 0x01AFU; /* DRC_ENA = 0, DRC_DAC_PATH = ADC */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DRC0, tmp);
+
+  tmp = 0x0001U; /* ADC_OSR128 = 1 (128xfs) */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_ADC0, tmp);
+  }
+ 
+  if (input_device == WM8904_IN_LINE2)
+  {
+  tmp = 0x0050U; /* AIFADCL_SRC = 0 (Left), AIFADCR_SRC = 1 (Right) */
+  }
+  else if (input_device == WM8904_IN_MIC1)
+  {
+  tmp = 0x0010U; /* AIFADCL_SRC = 0 (Left), AIFADCR_SRC = 0 (left) */
   }
   else /* WM8904_IN_DIGITAL_MIC2 */
   {
-    tmp = 0x0010U; /* AIFADCL_SRC = 0 (Left), AIFADCR_SRC = 0 (Left) */
+  tmp = 0x0010U; /* AIFADCL_SRC = 0 (Left), AIFADCR_SRC = 0 (Left) */
   }
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_AUDIO_INTERFACE0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_AUDIO_INTERFACE0, tmp);
 
-  /**********************************************/
   /* Resolution, protocol, frequency and volume */
-  /**********************************************/
-
   tmp = 0x0002U; /* Set resolution to 16B and protocol to I2S*/
-  ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_AUDIO_INTERFACE1, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_AUDIO_INTERFACE1, tmp);
 
-  ret += WM8904_SetFrequency(pObj, pInit->Frequency);
-
-  if (pInit->OutputDevice == WM8904_OUT_HEADPHONE)
+  counter += WM8904_SetFrequency(DeviceAddr, AudioFreq);
+  
+  if (input_device == WM8904_IN_LINE2)
   {
-    ret += WM8904_SetVolume(pObj, VOLUME_OUTPUT, (uint8_t)pInit->Volume);
+  tmp = 0x01C0U; /* ADC_VU = 1, ADC_VOL = +0dB */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ADC_DIGITAL_VOL_LEFT, tmp);
+
+  tmp = 0x01C0U; /* ADC_VU = 1, ADC_VOL = +0dB */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ADC_DIGITAL_VOL_RIGHT, tmp);
+
+  tmp = 0x0080U; /* LINMUTE = 1, LIN_VOL = -1.5dB */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_LEFT_INPUT0, tmp);
+
+  tmp = 0x0080U; /* LINMUTE = 1, LIN_VOL = -1.5dB */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_RIGHT_INPUT0, tmp);
+
+  tmp = 0x0014U; /* INL_CM_ENA = 0, L_IP_SEL_N[1:0] = IN2L (01b) */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_LEFT_INPUT1, tmp);
+
+  tmp = 0x0014U; /* INR_CM_ENA = 0, R_IP_SEL_N[1:0] = IN2R (01b) */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_RIGHT_INPUT1, tmp);
   }
-
-  if (pInit->InputDevice == WM8904_IN_LINE2)
+  else if (input_device == WM8904_IN_MIC1)
   {
-    tmp = 0x01C0U; /* ADC_VU = 1, ADC_VOL = +0dB */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ADC_DIGITAL_VOL_LEFT, &tmp, 2U);
+  tmp = 0x01FFU; /* ADC_VU = 1, ADC_VOL = +17dB */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ADC_DIGITAL_VOL_LEFT, tmp);
 
-    tmp = 0x01C0U; /* ADC_VU = 1, ADC_VOL = +0dB */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ADC_DIGITAL_VOL_RIGHT, &tmp, 2U);
+  tmp = 0x009AU; /* LINMUTE = 1, LIN_VOL = +14dB */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_LEFT_INPUT0, tmp);
 
-    tmp = 0x0080U; /* LINMUTE = 1, LIN_VOL = -1.5dB */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_LEFT_INPUT0, &tmp, 2U);
-
-    tmp = 0x0080U; /* LINMUTE = 1, LIN_VOL = -1.5dB */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_RIGHT_INPUT0, &tmp, 2U);
-
-    tmp = 0x0014U; /* INL_CM_ENA = 0, L_IP_SEL_N[1:0] = IN2L (01b) */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_LEFT_INPUT1, &tmp, 2U);
-
-    tmp = 0x0014U; /* INR_CM_ENA = 0, R_IP_SEL_N[1:0] = IN2R (01b) */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_RIGHT_INPUT1, &tmp, 2U);
-  }
-  else if (pInit->InputDevice == WM8904_IN_MIC1)
-  {
-    tmp = 0x01FFU; /* ADC_VU = 1, ADC_VOL = +17dB */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ADC_DIGITAL_VOL_LEFT, &tmp, 2U);
-
-    tmp = 0x009AU; /* LINMUTE = 1, LIN_VOL = +14dB */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_LEFT_INPUT0, &tmp, 2U);
-
-    tmp = 0x0044U; /* INL_CM_ENA = 1, L_IP_SEL_N[1:0] = IN1L (00b) */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_LEFT_INPUT1, &tmp, 2U);
+  tmp = 0x0044U; /* INL_CM_ENA = 1, L_IP_SEL_N[1:0] = IN1L (00b) */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_LEFT_INPUT1, tmp);
   }
   else /* WM8904_IN_DIGITAL_MIC2 */
   {
-    tmp = 0x0100U; /* ADC_VU = 1, ADC_VOL = Mute */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ADC_DIGITAL_VOL_LEFT, &tmp, 2U);
+  tmp = 0x0100U; /* ADC_VU = 1, ADC_VOL = Mute */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ADC_DIGITAL_VOL_LEFT, tmp);
   }
 
-  /***************/
   /* Charge pump */
-  /***************/
-
   tmp = 0x0001U; /* CP_ENA = 1  */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_CHARGE_PUMP0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_CHARGE_PUMP0, tmp);
 
-  /**********************/
   /* Output signal path */
-  /**********************/
-
   tmp = 0x0011U; /* HPL_ENA = HPR_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_HP0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_HP0, tmp);
 
   tmp = 0x0033U; /* HPL_ENA_DLY = HPR_ENA_DLY = HPL_ENA = HPR_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_HP0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_HP0, tmp);
 
-  /************/
   /* DC Servo */
-  /************/
-
   tmp = 0x0003U; /* Enable channels 0 and 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_DC_SERVO0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DC_SERVO0, tmp);
 
   tmp = 0x0030U; /* Startup 0 and 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_DC_SERVO1, &tmp, 2U);
-
-  iter_count = 0;
-  tmp = 0x0000U;
-  while(((tmp & 0x0003U) != 0x0003U) && (iter_count < 30U)) /* Wait DC Servo start-up completion */
-  {
-    iter_count ++;
-    WM8904_Delay(pObj, 10U);
-    ret += wm8904_read_reg(&pObj->Ctx, WM8904_DC_SERVO_READBACK0, &tmp, 2U);
-  }
-
-  /**********************/
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DC_SERVO1, tmp);
+  AUDIO_IO_Delay(100);
+  
   /* Output signal path */
-  /**********************/
-
   tmp = 0x0077U; /* HPL_ENA_OUTP= HPL_ENA_OUTR = HPL_ENA_DLY = HPR_ENA_DLY = HPL_ENA = HPR_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_HP0, &tmp, 2U);
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_HP0, tmp);
 
   tmp = 0x00FFU; /* HPL_RMV_SHORT = HPR_RMV_SHORT = HPL_ENA_OUTP= HPL_ENA_OUTR = HPL_ENA_DLY = HPR_ENA_DLY = HPL_ENA = HPR_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_HP0, &tmp, 2U);
-
-  /***************/
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_HP0, tmp);
+  
   /* Charge pump */
-  /***************/
-
   tmp = 0x01U; /* CP_DYN_PWR = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_CLASS_W0, &tmp, 2U);
-
-  /* Store current devices */
-  WM8904_CurrentDevices = (pInit->OutputDevice | pInit->InputDevice);
-
-  pObj->IsInitialized = 1U;
-
-  return ret;
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_CLASS_W0, tmp);
+  
+  /* Volume Control */
+  if (output_device == WM8904_OUT_HEADPHONE)
+  {
+     counter += WM8904_SetVolume(DeviceAddr, Volume);
+  }
+ 
+  return counter;
 }
 
 /**
   * @brief  Deinitializes the audio codec.
-  * @param  pObj pointer to component object
-  * @retval Component status
+  * @param  None
+  * @retval None
   */
-int32_t WM8904_DeInit(WM8904_Object_t *pObj)
+void WM8904_DeInit(void)
 {
-  int32_t ret;
-  uint16_t tmp;
-
-  /**********************/
-  /* Output signal path */
-  /**********************/
-
-  tmp = 0x0077U; /* HPL_RMV_SHORT = HPR_RMV_SHORT = 0 */
-  ret = wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_HP0, &tmp, 2U);
-
-  tmp = 0x0000U; /* HPL_ENA_OUTP= HPL_ENA_OUTR = HPL_ENA_DLY = HPR_ENA_DLY = HPL_ENA = HPR_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_HP0, &tmp, 2U);
-
-  /************/
-  /* DC Servo */
-  /************/
-
-  tmp = 0x0000U; /* Disable channels 0 and 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_DC_SERVO0, &tmp, 2U);
-
-  /***************/
-  /* Charge pump */
-  /***************/
-
-  tmp = 0x0000U; /* CP_ENA = 0  */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_CHARGE_PUMP0, &tmp, 2U);
-
-  /*******/
-  /* DAC */
-  /*******/
-
-  tmp = 0x0000U; /* ADCL_ENA = DACL_ENA = DACR_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_PWR_MANAGEMENT6, &tmp, 2U);
-
-  /**************/
-  /* Clock rate */
-  /**************/
-
-  tmp = 0x0004U; /* CLK_DSP_ENA = 0, CLK_SYS_ENA = 1 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES2, &tmp, 2U);
-
-  /**********************/
-  /* Output signal path */
-  /**********************/
-
-  tmp = 0x0000U; /* HPL_PGA_ENA = HPR_PGA_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_PWR_MANAGEMENT2, &tmp, 2U);
-
-  tmp = 0x0000U; /* INL_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_PWR_MANAGEMENT0, &tmp, 2U);
-
-  /********************/
-  /* Mic BIAS control */
-  /********************/
-
-  tmp = 0x0000U; /* MICBIAS_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_MIC_BIAS_CONTROL0, &tmp, 2U);
-
-  /**************************************/
-  /* Reference voltages and master bias */
-  /**************************************/
-
-  tmp = 0x0018U; /* ISEL[1:0] = 10b, BIAS_EN = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_BIAS_CONTROL0, &tmp, 2U);
-
-  tmp = 0x0042U; /* VMID_BUF_ENA = 1, VMID_RES[1:0] = 01b, VMID_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_VMID_CONTROL0, &tmp, 2U);
-  WM8904_Delay(pObj, 300U);
-
-  tmp = 0x0042U; /* VMID_BUF_ENA = 1, VMID_RES[1:0] = 01b, VMID_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_VMID_CONTROL0, &tmp, 2U);
-
-  tmp = 0x0000U; /* VMID_BUF_ENA = 0, VMID_RES[1:0] = 00b, VMID_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_VMID_CONTROL0, &tmp, 2U);
-
-  tmp = 0x0018U; /* ISEL[1:0] = 10b,  BIAS_EN = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_BIAS_CONTROL0, &tmp, 2U);
-
-  /**************/
-  /* Clock rate */
-  /**************/
-
-  tmp = 0x0000U; /* CLK_SYS_ENA = 0 */
-  ret += wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES2, &tmp, 2U);
-
-  if (pObj->IsInitialized == 1U)
-  {
-    pObj->IsInitialized = 0U;
-  }
-
-  return ret;
+  /* Deinitialize Audio Codec interface */
+  AUDIO_IO_DeInit();
 }
 
 /**
   * @brief  Get the WM8904 ID.
-  * @param  pObj pointer to component object
-  * @param  Id component ID
-  * @retval Component status
+  * @param  DeviceAddr: Device address on communication Bus
+  * @retval the WM8904 ID
   */
-int32_t WM8904_ReadID(WM8904_Object_t *pObj, uint32_t *Id)
+uint32_t WM8904_ReadID(uint16_t DeviceAddr)
 {
-  int32_t ret;
-  uint16_t wm8904_id;
+  uint16_t Read_Value;
 
   /* Initialize the Control interface of the Audio Codec */
-  pObj->IO.Init();
+  AUDIO_IO_Init();
 
   /* Get ID from component */
-  ret = wm8904_read_reg(&pObj->Ctx, WM8904_SW_RESET, &wm8904_id, 2U);
-
-  *Id = wm8904_id;
-
-  return ret;
+  Read_Value =((uint32_t)AUDIO_IO_Read_16(DeviceAddr, WM8904_CHIPID_ADDR));
+  
+  return Read_Value;  
 }
 
 /**
   * @brief Start the audio Codec play feature.
   * @note For this codec no Play options are required.
-  * @param  pObj pointer to component object
-  * @retval Component status
+  * @param DeviceAddr: Device address on communication Bus.   
+  * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_Play(WM8904_Object_t *pObj)
+uint32_t WM8904_Play(uint16_t DeviceAddr, uint16_t* pBuffer, uint16_t Size)
 {
-  int32_t ret = WM8904_OK;
-  uint16_t tmp;
-
-  if ((WM8904_CurrentDevices & WM8904_OUT_HEADPHONE) == WM8904_OUT_HEADPHONE)
-  {
-    tmp = 0x0640U; /* DAC_MUTE= 0 */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_DAC_DIGITAL1, &tmp, 2U);
-  }
-
-
-  if ((WM8904_CurrentDevices & WM8904_IN_MIC1) == WM8904_IN_MIC1)
-  {
-    tmp = 0x001AU; /* LINMUTE = 0 */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_LEFT_INPUT0, &tmp, 2U);
-  }
-
-  if ((WM8904_CurrentDevices & WM8904_IN_LINE2) == WM8904_IN_LINE2)
-  {
-    tmp = 0x0000U; /* LINMUTE = 0 */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_LEFT_INPUT0, &tmp, 2U);
-
-    tmp = 0x0000U; /* LINMUTE = 0 */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_RIGHT_INPUT0, &tmp, 2U);
-  }
-
-  if ((WM8904_CurrentDevices & WM8904_IN_DIGITAL_MIC2) == WM8904_IN_DIGITAL_MIC2)
-  {
-    tmp = 0x01F0U; /* ADC_VU = 1, ADC_VOL = +17,6dB */
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ADC_DIGITAL_VOL_LEFT, &tmp, 2U);
-  }
-
-  return ret;
+  uint32_t counter = 0;
+ 
+  /* Resumes the audio file playing */  
+  /* Unmute the output first */
+  counter += WM8904_SetMute(DeviceAddr, WM8904_MUTE_OFF);
+  
+  return counter;
 }
 
 /**
   * @brief Pauses playing on the audio codec.
-  * @param  pObj pointer to component object
-  * @retval Component status
+  * @param DeviceAddr: Device address on communication Bus. 
+  * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_Pause(WM8904_Object_t *pObj)
+uint32_t WM8904_Pause(uint16_t DeviceAddr)
 {
+  uint32_t counter = 0;
+  
   /* Pause the audio file playing */
-  return WM8904_SetMute(pObj, WM8904_MUTE_ON);
+  counter += WM8904_SetMute(DeviceAddr, WM8904_MUTE_ON);
+  
+  return counter;
 }
 
 /**
   * @brief Resumes playing on the audio codec.
-  * @param  pObj pointer to component object
-  * @retval Component status
+  * @param DeviceAddr: Device address on communication Bus. 
+  * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_Resume(WM8904_Object_t *pObj)
+uint32_t WM8904_Resume(uint16_t DeviceAddr)
 {
+  uint32_t counter = 0;
+ 
   /* Resumes the audio file playing */
-  return WM8904_SetMute(pObj, WM8904_MUTE_OFF);
+  counter += WM8904_SetMute(DeviceAddr, WM8904_MUTE_OFF);
+
+  return counter;
 }
 
 /**
@@ -563,471 +428,263 @@ int32_t WM8904_Resume(WM8904_Object_t *pObj)
   *                            play again the audio stream).
   * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_Stop(WM8904_Object_t *pObj, uint32_t CodecPdwnMode)
+uint32_t WM8904_Stop(uint16_t DeviceAddr, uint32_t CodecPdwnMode)
 {
-  int32_t ret;
+  uint32_t counter;
+  uint16_t tmp;
 
   /* Mute the output */
-  ret = WM8904_SetMute(pObj, WM8904_MUTE_ON);
+  counter = WM8904_SetMute(DeviceAddr, WM8904_MUTE_ON);
 
-  if (CodecPdwnMode == WM8904_PDWN_HW)
+  if (CodecPdwnMode == WM8904_PDWN_SW)
   {
-    ret += WM8904_DeInit(pObj);
+   /* Only output mute required*/
+  }
+  else /* CODEC_PDWN_HW */
+  {
+  /* Output signal path */
+  tmp = 0x0077U; /* HPL_RMV_SHORT = HPR_RMV_SHORT = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_HP0, tmp);
+
+  tmp = 0x0000U; /* HPL_ENA_OUTP= HPL_ENA_OUTR = HPL_ENA_DLY = HPR_ENA_DLY = HPL_ENA = HPR_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_HP0, tmp);
+
+  /* DC Servo */
+  tmp = 0x0000U; /* Disable channels 0 and 1 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_DC_SERVO0, tmp);
+
+  /* Charge pump */
+  tmp = 0x0000U; /* CP_ENA = 0  */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_CHARGE_PUMP0, tmp);
+
+  /* DAC */
+  tmp = 0x0000U; /* ADCL_ENA = DACL_ENA = DACR_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_PWR_MANAGEMENT6, tmp);
+
+  /* Clock rate */
+  tmp = 0x0004U; /* CLK_DSP_ENA = 0, CLK_SYS_ENA = 1 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES2, tmp);
+
+  /* Output signal path */
+  tmp = 0x0000U; /* HPL_PGA_ENA = HPR_PGA_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_PWR_MANAGEMENT2, tmp);
+
+  tmp = 0x0000U; /* INL_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_PWR_MANAGEMENT0, tmp);
+
+  /* Mic BIAS control */
+  tmp = 0x0000U; /* MICBIAS_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_MIC_BIAS_CONTROL0, tmp);
+
+  /* Reference voltages and master bias */
+  tmp = 0x0018U; /* ISEL[1:0] = 10b, BIAS_EN = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_BIAS_CONTROL0, tmp);
+
+  tmp = 0x0042U; /* VMID_BUF_ENA = 1, VMID_RES[1:0] = 01b, VMID_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_VMID_CONTROL0, tmp);
+  AUDIO_IO_Delay(300);
+
+  tmp = 0x0042U; /* VMID_BUF_ENA = 1, VMID_RES[1:0] = 01b, VMID_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_VMID_CONTROL0, tmp);
+
+  tmp = 0x0000U; /* VMID_BUF_ENA = 0, VMID_RES[1:0] = 00b, VMID_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_VMID_CONTROL0, tmp);
+
+  tmp = 0x0018U; /* ISEL[1:0] = 10b,  BIAS_EN = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_BIAS_CONTROL0, tmp);
+
+  /* Clock rate */
+  tmp = 0x0000U; /* CLK_SYS_ENA = 0 */
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES2, tmp);
   }
 
-  return ret;
+  return counter;
 }
 
 /**
-  * @brief Set higher or lower the codec volume level.
-  * @param  pObj pointer to component object
-  * @param  InputOutput Input or Output volume
-  * @param  Volume  a byte value from 0 to 100.
-  *         (refer to codec registers description for more details).
-  * @retval Component status
+  * @brief Sets higher or lower the codec volume level.
+  * @param DeviceAddr: Device address on communication Bus.
+  * @param Volume: a byte value from 0 to 255 (refer to codec registers 
+  *         description for more details).
+  * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_SetVolume(WM8904_Object_t *pObj, uint32_t InputOutput, uint8_t Volume)
+uint32_t WM8904_SetVolume(uint16_t DeviceAddr, uint8_t Volume)
 {
-  uint8_t  convertedvol;
-  int32_t  ret;
+  uint32_t counter = 0;
+  uint8_t convertedvol;
   uint16_t tmp;
 
-  /* Only output volume supported */
-  if (InputOutput == VOLUME_OUTPUT)
-  {
-    convertedvol = VOLUME_OUT_CONVERT(Volume);
+  /* Output volume */
+  convertedvol = VOLUME_OUT_CONVERT(Volume);
+  tmp = (uint16_t) convertedvol;
+  
+  /* Left Headphone Volume */  
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_OUTPUT1_LEFT, tmp);
+  
+  /* Right Headphone Volume (with volume update bit) */  
+  tmp |= 0x80U;
+  counter += CODEC_IO_Write(DeviceAddr, WM8904_ANALOG_OUTPUT1_RIGHT, tmp);
 
-    tmp = (uint16_t) convertedvol;
-
-    /* Left Headphone Volume */
-    ret = wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_OUTPUT1_LEFT, &tmp, 2U);
-    /* Right Headphone Volume */
-    tmp |= 0x80U; /* Volume update */
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_OUTPUT1_RIGHT, &tmp, 2U);
-  }
-  else /* Input volume */
-  {
-    ret = WM8904_ERROR;
-  }
-
-  return ret;
+  return counter;
 }
 
-/**
-  * @brief Get higher or lower the codec volume level.
-  * @param  pObj pointer to component object
-  * @param  InputOutput Input or Output volume
-  * @param  Volume audio volume
-  * @retval Component status
-  */
-int32_t WM8904_GetVolume(WM8904_Object_t *pObj, uint32_t InputOutput, uint8_t *Volume)
-{
-  int32_t  ret;
-  uint16_t tmp;
-
-  /* only output volume supported */
-  if (InputOutput == VOLUME_OUTPUT)
-  {
-    /* Left Headphone Volume */
-    ret = wm8904_read_reg(&pObj->Ctx, WM8904_ANALOG_OUTPUT1_LEFT, &tmp, 2U);
-    tmp &= 0x3FU;
-
-    if (ret == WM8904_OK)
-    {
-      *Volume = (uint8_t) VOLUME_OUT_INVERT(tmp);
-    }
-  }
-  else /* Input volume */
-  {
-    ret = WM8904_ERROR;
-  }
-
-  return ret;
-}
 
 /**
   * @brief Enables or disables the mute feature on the audio codec.
-  * @param  pObj pointer to component object
-  * @param Cmd  WM8904_MUTE_ON to enable the mute or WM8904_MUTE_OFF to disable the
+  * @param DeviceAddr: Device address on communication Bus.   
+  * @param Cmd: WM8904_MUTE_ON to enable the mute or WM8904_MUTE_OFF to disable the
   *             mute mode.
   * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_SetMute(WM8904_Object_t *pObj, uint32_t Cmd)
+
+uint32_t WM8904_SetMute(uint16_t DeviceAddr, uint32_t Cmd)
 {
-  int32_t ret = WM8904_OK;
+  uint32_t counter = 0;
   uint16_t tmp;
-
-  if ((WM8904_CurrentDevices & WM8904_OUT_HEADPHONE) == WM8904_OUT_HEADPHONE)
+  
+  /* Set the Mute mode */
+  if(Cmd == WM8904_MUTE_ON)
   {
-    /* Read DAC digital 1 */
-    ret += wm8904_read_reg(&pObj->Ctx, WM8904_DAC_DIGITAL1, &tmp, 2U);
-
-    if(Cmd == WM8904_MUTE_ON)
-    {
-      /* Mute the DAC Digital 1 */
-      tmp |= 0x0008U;
-    }
-    else
-    {
-      /* Unmute the the DAC Digital 1 */
-      tmp &= ~(0x0008U);
-    }
-    ret += wm8904_write_reg(&pObj->Ctx, WM8904_DAC_DIGITAL1, &tmp, 2U);
+    /* Mute the DAC Digital 1 (DAC_MUTE = 1, keep OSR128/unmute-ramp bits) */
+    tmp = 0x0644U;
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_DAC_DIGITAL1, tmp);
+  }
+  else /* WM8904_MUTE_OFF : disable the Mute */
+  {
+    /* Unmute the DAC Digital 1 (DAC_MUTE = 0) */
+    tmp = 0x0640U;
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_DAC_DIGITAL1, tmp);
   }
 
-  if ((WM8904_CurrentDevices & WM8904_IN_MIC1) == WM8904_IN_MIC1)
-  {
-    if(Cmd == WM8904_MUTE_ON)
-    {
-      tmp = 0x009AU; /* LINMUTE = 1 */
-    }
-    else
-    {
-      tmp = 0x001AU; /* LINMUTE = 0 */
-    }
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_LEFT_INPUT0, &tmp, 2U);
-  }
-
-  if ((WM8904_CurrentDevices & WM8904_IN_LINE2) == WM8904_IN_LINE2)
-  {
-    if(Cmd == WM8904_MUTE_ON)
-    {
-      tmp = 0x0080U; /* LINMUTE = 1 */
-    }
-    else
-    {
-      tmp = 0x0000U; /* LINMUTE = 0 */
-    }
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_LEFT_INPUT0, &tmp, 2U);
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ANALOG_RIGHT_INPUT0, &tmp, 2U);
-  }
-
-  if ((WM8904_CurrentDevices & WM8904_IN_DIGITAL_MIC2) == WM8904_IN_DIGITAL_MIC2)
-  {
-    if(Cmd == WM8904_MUTE_ON)
-    {
-      tmp = 0x0100U; /* ADC_VU = 1, ADC_VOL = Mute */
-    }
-    else
-    {
-      tmp = 0x01F0U; /* ADC_VU = 1, ADC_VOL = +17,6dB */
-    }
-    ret +=  wm8904_write_reg(&pObj->Ctx, WM8904_ADC_DIGITAL_VOL_RIGHT, &tmp, 2U);
-  }
-
-  return ret;
+  return counter;
 }
 
+
 /**
-  * @brief Switch dynamically (while audio file is played) the output target
+  * @brief Switch dynamically (while audio file is played) the output target 
   *         (speaker or headphone).
-  * @param  pObj pointer to component object
-  * @param Output  specifies the audio output target: WM8904_OUT_HEADPHONE,
-  *         WM8904_OUT_LINE or WM8904_OUT_BOTH.
+  * @param DeviceAddr: Device address on communication Bus.
+  * @param Output: specifies the audio output target: WM8904_OUT_HEADPHONE,
+  *         WM8904_OUT_BOTH or WM8904_OUT_LINE 
   * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_SetOutputMode(WM8904_Object_t *pObj, uint32_t Output)
+uint32_t WM8904_SetOutputMode(uint16_t DeviceAddr, uint8_t Output)
 {
-  (void)(pObj);
+  (void)(DeviceAddr);
   (void)(Output);
 
   /* This feature is currently not supported */
-  return WM8904_ERROR;
-}
-
-/**
-  * @brief Set Audio resolution.
-  * @param pObj pointer to component object
-  * @param Resolution  Audio resolution. Can be:
-  *                    WM8904_RESOLUTION_16b, WM8904_RESOLUTION_20b,
-  *                    WM8904_RESOLUTION_24b or WM8904_RESOLUTION_32b
-  * @retval Component status
-  */
-int32_t WM8904_SetResolution(WM8904_Object_t *pObj, uint32_t Resolution)
-{
-  (void)(pObj);
-  (void)(Resolution);
-
-  /* This feature is currently not supported */
-  return WM8904_ERROR;
-}
-
-/**
-  * @brief Get Audio resolution.
-  * @param pObj pointer to component object
-  * @retval Audio resolution
-  */
-int32_t WM8904_GetResolution(WM8904_Object_t *pObj, uint32_t *Resolution)
-{
-  int32_t  ret;
-  uint16_t tmp;
-
-  ret = wm8904_read_reg(&pObj->Ctx, WM8904_AUDIO_INTERFACE1, &tmp, 2U);
-
-  switch((tmp >> 2U) & 0x0003U)
-  {
-    case 1:
-      *Resolution = WM8904_RESOLUTION_20B;
-      break;
-    case 2:
-      *Resolution = WM8904_RESOLUTION_24B;
-      break;
-    case 3:
-      *Resolution = WM8904_RESOLUTION_32B;
-      break;
-    case 0:
-    default:
-      *Resolution = WM8904_RESOLUTION_16B;
-      break;
-  }
-
-  return ret;
-}
-
-/**
-  * @brief Set Audio Protocol.
-  * @param pObj pointer to component object
-  * @param Protocol Audio Protocol. Can be:
-  *                  WM8904_PROTOCOL_R_JUSTIFIED, WM8904_PROTOCOL_L_JUSTIFIED,
-  *                  WM8904_PROTOCOL_I2S or WM8904_PROTOCOL_DSP
-  * @retval Component status
-  */
-int32_t WM8904_SetProtocol(WM8904_Object_t *pObj, uint32_t Protocol)
-{
-  (void)(pObj);
-  (void)(Protocol);
-
-  /* This feature is currently not supported */
-  return WM8904_ERROR;
-}
-
-/**
-  * @brief Get Audio Protocol.
-  * @param pObj pointer to component object
-  * @retval Component status
-  */
-int32_t WM8904_GetProtocol(WM8904_Object_t *pObj, uint32_t *Protocol)
-{
-  int32_t  ret;
-  uint16_t tmp;
-
-  ret = wm8904_read_reg(&pObj->Ctx, WM8904_AUDIO_INTERFACE1, &tmp, 2U);
-
-  *Protocol = (((uint32_t) tmp) & 0x0003U);
-
-  return ret;
+  return 0;
 }
 
 /**
   * @brief Sets new frequency.
-  * @param pObj pointer to component object
-  * @param AudioFreq Audio frequency
-  * @retval Component status
+  * @param DeviceAddr: Device address on communication Bus.
+  * @param AudioFreq: Audio frequency used to play the audio stream.
+  * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_SetFrequency(WM8904_Object_t *pObj, uint32_t AudioFreq)
+uint32_t WM8904_SetFrequency(uint16_t DeviceAddr, uint32_t AudioFreq)
 {
-  int32_t ret;
+  int32_t counter = 0;
   uint16_t tmp;
-
-  switch (AudioFreq)
+  
+  /*  Clock Configurations */
+  switch(AudioFreq)
   {
-  case  WM8904_FREQUENCY_8K:
-    /* Sample Rate = 8 (kHz), ratio=256 */
+  case WM8904_FREQUENCY_8K:
+       /* Sample Rate = 8 (KHz), ratio=256 */ 
     tmp = 0x0C00U;
-    ret = wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES1, &tmp, 2U);
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES1, tmp);
     break;
 
-  case  WM8904_FREQUENCY_11K:
-    /* Sample Rate = 11.025 (kHz), ratio=256 */
+  case WM8904_FREQUENCY_11K:
+  case WM8904_FREQUENCY_12K:
+       /* Sample Rate = 11.025 (KHz) or 12 (KHz), ratio=256 */ 
     tmp = 0x0C01U;
-    ret = wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES1, &tmp, 2U);
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES1, tmp);
     break;
 
-  case  WM8904_FREQUENCY_16K:
-    /* Sample Rate = 16 (kHz), ratio=256 */
+  case WM8904_FREQUENCY_16K:
+      /* Sample Rate = 16 (KHz), ratio=256 */ 
     tmp = 0x0C02U;
-    ret = wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES1, &tmp, 2U);
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES1, tmp);
     break;
 
-  case  WM8904_FREQUENCY_22K:
-  case  WM8904_FREQUENCY_24K:
-    /* Sample Rate = 22.050 (kHz) or 24 (kHz), ratio=256 */
+  case WM8904_FREQUENCY_22K:
+  case WM8904_FREQUENCY_24K:
+       /* Sample Rate = 22.05 (KHz) or 24 (KHz), ratio=256 */ 
     tmp = 0x0C03U;
-    ret = wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES1, &tmp, 2U);
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES1, tmp);
     break;
 
-  case  WM8904_FREQUENCY_32K:
-    /* Sample Rate = 32 (kHz), ratio=256 */
+  case WM8904_FREQUENCY_32K:
+       /* Sample Rate = 32 (KHz), ratio=256 */ 
     tmp = 0x0C04U;
-    ret = wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES1, &tmp, 2U);
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES1, tmp);
     break;
 
   case  WM8904_FREQUENCY_44K:
   case  WM8904_FREQUENCY_48K:
-    /* Sample Rate = 44.1 (kHz) or 48 (kHz), ratio=256 */
-    tmp = 0x0C05U;
-    ret = wm8904_write_reg(&pObj->Ctx, WM8904_CLOCK_RATES1, &tmp, 2U);
-    break;
-
-  default:
-    ret = WM8904_ERROR;
-    break;
-  }
-
-  return ret;
-}
-
-/**
-  * @brief Get frequency.
-  * @param pObj pointer to component object
-  * @param AudioFreq Audio frequency
-  * @retval Component status
-  */
-int32_t WM8904_GetFrequency(WM8904_Object_t *pObj, uint32_t *AudioFreq)
-{
-  int32_t  ret;
-  uint16_t tmp;
-
-  ret = wm8904_read_reg(&pObj->Ctx, WM8904_CLOCK_RATES1, &tmp, 2U);
-
-  switch(tmp & 0x0007U)
-  {
-  case 0:
-    *AudioFreq = WM8904_FREQUENCY_8K;
-    break;
-  case 1:
-    /* 11.025k or 12k */
-    *AudioFreq = WM8904_FREQUENCY_11K;
-    break;
-  case 2:
-    *AudioFreq = WM8904_FREQUENCY_16K;
-    break;
-  case 3:
-    /* 22.05k or 24k */
-    *AudioFreq = WM8904_FREQUENCY_22K;
-    break;
-  case 4:
-    *AudioFreq = WM8904_FREQUENCY_32K;
-    break;
-  case 5:
     /* 44.1k or 48k */
-    *AudioFreq = WM8904_FREQUENCY_44K;
+    tmp = 0x0C05U;
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES1, tmp);
     break;
+
   default:
-    ret = WM8904_ERROR;
+      /* 44.1k or 48k */
+    tmp = 0x0C05U;
+    counter += CODEC_IO_Write(DeviceAddr, WM8904_CLOCK_RATES1, tmp);
     break;
   }
 
-  return ret;
+  return counter;
 }
 
 /**
   * @brief Resets wm8904 registers.
-  * @param pObj pointer to component object
-  * @retval Component status if correct communication, else wrong communication
+  * @param DeviceAddr: Device address on communication Bus.
+  * @retval 0 if correct communication, else wrong communication
   */
-int32_t WM8904_Reset(WM8904_Object_t *pObj)
+uint32_t WM8904_Reset(uint16_t DeviceAddr)
 {
   uint16_t tmp;
-  int32_t  ret;
+  int32_t  counter = 0;
 
   /* Reset Codec by writing in 0x0000 address register */
   tmp = 0x0U; /* Reset registers */
-  ret = wm8904_write_reg(&pObj->Ctx, WM8904_SW_RESET, &tmp, 2U);
+  counter = CODEC_IO_Write(DeviceAddr, WM8904_SW_RESET, tmp);
 
-  return ret;
+  return counter;
 }
 
-/**
-  * @brief  Function
-  * @param  Component object pointer
-  * @retval error status
-  */
-int32_t WM8904_RegisterBusIO(WM8904_Object_t *pObj, const WM8904_IO_t *pIO)
-{
-  int32_t ret;
-
-  if (pObj == NULL)
-  {
-    ret = WM8904_ERROR;
-  }
-  else
-  {
-    pObj->IO.Init      = pIO->Init;
-    pObj->IO.DeInit    = pIO->DeInit;
-    pObj->IO.Address   = pIO->Address;
-    pObj->IO.WriteReg  = pIO->WriteReg;
-    pObj->IO.ReadReg   = pIO->ReadReg;
-    pObj->IO.GetTick   = pIO->GetTick;
-
-    pObj->Ctx.ReadReg  = WM8904_ReadRegWrap;
-    pObj->Ctx.WriteReg = WM8904_WriteRegWrap;
-    pObj->Ctx.handle   = pObj;
-
-    if(pObj->IO.Init != NULL)
-    {
-      ret = pObj->IO.Init();
-    }
-    else
-    {
-      ret = WM8904_ERROR;
-    }
-  }
-
-  return ret;
-}
 /**
   * @}
   */
 
+
 /******************** Static functions ****************************************/
-/** @addtogroup WM8904_Private_Functions
-  * @{
-  */
 /**
-  * @brief This function provides accurate delay (in milliseconds)
-  * @param pObj pointer to component object
-  * @param Delay: specifies the delay time length, in milliseconds
+  * @brief  Writes/Read a single data.
+  * @param  Addr: I2C address
+  * @param  Reg: Reg address 
+  * @param  Value: Data to be written
+  * @retval None
   */
-static void WM8904_Delay(const WM8904_Object_t *pObj, uint32_t Delay)
+static uint8_t CODEC_IO_Write(uint8_t Addr, uint16_t Reg, uint16_t Value)
 {
-  uint32_t tickstart;
-
-  tickstart = pObj->IO.GetTick();
-  while((pObj->IO.GetTick() - tickstart) < Delay)
-  {
-  }
+  uint32_t result=0;
+  
+  AUDIO_IO_Write_16(Addr, Reg, Value);
+  
+#ifdef VERIFY_WRITTENDATA
+  /* Verify that the data has been correctly written */
+  result = (AUDIO_IO_Read_16(Addr, Reg) == Value) ? 0U : 1U;
+#endif /* VERIFY_WRITTENDATA */
+  
+  return result;
 }
 
-/**
-  * @brief  Function
-  * @param  handle  Component object handle
-  * @param  Reg     The target register address to write
-  * @param  pData   The target register value to be written
-  * @param  Length  buffer size to be written
-  * @retval error status
-  */
-static int32_t WM8904_ReadRegWrap(void *handle, uint16_t Reg, uint8_t* pData, uint16_t Length)
-{
-  const WM8904_Object_t *pObj = (WM8904_Object_t *)handle;
 
-  return pObj->IO.ReadReg(pObj->IO.Address, Reg, pData, Length);
-}
-
-/**
-  * @brief  Function
-  * @param  handle Component object handle
-  * @param  Reg    The target register address to write
-  * @param  pData  The target register value to be written
-  * @param  Length buffer size to be written
-  * @retval error status
-  */
-static int32_t WM8904_WriteRegWrap(void *handle, uint16_t Reg, uint8_t* pData, uint16_t Length)
-{
-  const WM8904_Object_t *pObj = (WM8904_Object_t *)handle;
-
-  return pObj->IO.WriteReg(pObj->IO.Address, Reg, pData, Length);
-}
 /**
   * @}
   */

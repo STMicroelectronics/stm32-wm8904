@@ -1,6 +1,6 @@
 # BSP STM32-WM8904 Component
 
-![latest tag](https://img.shields.io/github/v/tag/STMicroelectronics/stm32-wm8904.svg?color=brightgreen)
+![tag](https://img.shields.io/badge/tag-v2.0.0-brightgreen.svg)
 
 ## Overview
 
